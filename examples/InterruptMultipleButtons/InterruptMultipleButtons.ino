@@ -102,7 +102,7 @@ void setup() {
     Serial.println("(Buttons: UP, DOWN, LEFT, RIGHT)\n");
 }
 
-void printButtonEvent(const char* buttonName, const ButtonState& button) {
+void printButtonEvent(const char* buttonName, volatile ButtonState& button) {
     if (button.changed) {
         Serial.print("► ");
         Serial.print(buttonName);
