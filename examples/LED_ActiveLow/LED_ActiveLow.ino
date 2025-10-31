@@ -30,11 +30,17 @@ MCP23009ActiveLowPin led3(mcp, 3);
 MCP23009ActiveLowPin* leds[] = {&led0, &led1, &led2, &led3};
 const int NUM_LEDS = 4;
 
-const int RESET_PIN = -1;  // Set to your reset pin number
+// Reset pin (adjust for your board)
+const int RESET_PIN = RST_EXPANDER;  // Set to your reset pin number, or -1 if none
 
 void setup() {
     Serial.begin(115200);
     while (!Serial) delay(10);
+
+    Serial.println("Initializing I2C...");
+    Wire.setSDA(I2C_INT_SDA);
+    Wire.setSCL(I2C_INT_SCL);
+    Wire.begin();
 
     Serial.println("================================");
     Serial.println("MCP23009E LED Active-Low Example");

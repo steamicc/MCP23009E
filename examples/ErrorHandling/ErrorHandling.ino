@@ -23,11 +23,17 @@
 // Create MCP23009E instance
 MCP23009E mcp(Wire, MCP23009_I2C_ADDR);
 
-const int RESET_PIN = -1;  // Set to your reset pin, or -1 if none
+// Reset pin (adjust for your board)
+const int RESET_PIN = RST_EXPANDER;  // Set to your reset pin number, or -1 if none
 
 void setup() {
     Serial.begin(115200);
     while (!Serial) delay(10);
+
+    Serial.println("Initializing I2C...");
+    Wire.setSDA(I2C_INT_SDA);
+    Wire.setSCL(I2C_INT_SCL);
+    Wire.begin();
 
     Serial.println("================================");
     Serial.println("MCP23009E Error Handling Example");
