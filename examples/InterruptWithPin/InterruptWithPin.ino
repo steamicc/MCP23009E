@@ -29,9 +29,9 @@ MCP23009E mcp(Wire, MCP23009_I2C_ADDR);
 const int RESET_PIN = RST_EXPANDER;
 const int INTERRUPT_PIN = INT_EXPANDER;
 
-// Create Pin objects
-MCP23009Pin button(mcp, MCP23009_BTN_UP, INPUT_PULLUP);
-MCP23009ActiveLowPin led(mcp, 0, OUTPUT);  // Active-low LED
+// Create Pin objects (mode will be configured in setup after I2C initialization)
+MCP23009Pin button(mcp, MCP23009_BTN_UP);
+MCP23009ActiveLowPin led(mcp, 0);
 
 // Button state
 volatile bool buttonEvent = false;
@@ -77,7 +77,11 @@ void setup() {
     // Initialize MCP23009E
     mcp.begin(RESET_PIN, INTERRUPT_PIN);
 
-    // LED is already configured by constructor, start with LED off
+    // Configure pin modes after I2C initialization
+    button.pinMode(INPUT_PULLUP);
+    led.pinMode(OUTPUT);
+
+    // Start with LED off
     led.low();
 
     // Attach interrupts to button using Pin API
@@ -94,6 +98,9 @@ void setup() {
 }
 
 void loop() {
+    // Process pending interrupts (important for reliability)
+    mcp.processPendingInterrupts();
+
     // Handle button events
     if (buttonEvent) {
         buttonEvent = false;

@@ -37,6 +37,7 @@
 #define MCP23009_IOCON_DISSLW  0x10  // Slew Rate control bit
 #define MCP23009_IOCON_ODR     0x04  // Open-Drain output
 #define MCP23009_IOCON_INTPOL  0x02  // Interrupt polarity
+#define MCP23009_IOCON_INTCC   0x01  // Interrupt Clearing Control
 
 // ===== Default I2C Address =====
 #define MCP23009_I2C_ADDR   0x20
@@ -172,9 +173,15 @@ public:
     void disableInterrupt(uint8_t gpx);
 
     /**
-     * @brief Handle interrupt event (call from ISR)
+     * @brief Handle interrupt event (call from ISR or main loop)
      */
     void handleInterrupt();
+
+    /**
+     * @brief Check and process pending interrupts (call from main loop)
+     * @return true if an interrupt was processed
+     */
+    bool processPendingInterrupts();
 
     /**
      * @brief Static ISR handler (automatically configured by begin())
@@ -248,8 +255,11 @@ private:
 
     // Static instance for ISR
     static MCP23009E* _isrInstance;
-    static uint32_t _lastInterruptTime;
-    static const uint32_t DEBOUNCE_DELAY = 50;  // 50ms debounce
+    static volatile bool _interruptPending;
+
+    // Per-GPIO debouncing
+    uint32_t _lastInterruptTime[8];
+    static const uint32_t DEBOUNCE_DELAY = 0;  // Debounce disabled for testing
 
     // Private methods
     void writeRegister(uint8_t reg, uint8_t value);
@@ -269,6 +279,9 @@ private:
  *
  * This class provides an Arduino-like Pin interface for MCP23009E GPIO pins.
  * You can use it just like a regular Arduino digital pin.
+ *
+ * IMPORTANT: The constructor does NOT configure the pin to avoid I2C communication
+ * before Wire.begin(). You MUST call pinMode() explicitly after mcp.begin().
  */
 class MCP23009Pin {
 public:
@@ -276,7 +289,7 @@ public:
      * @brief Constructor
      * @param mcp Reference to MCP23009E instance
      * @param pinNumber GPIO number (0-7)
-     * @param mode Pin mode (INPUT, OUTPUT, INPUT_PULLUP)
+     * @param mode Pin mode (INPUT, OUTPUT, INPUT_PULLUP) - stored but not applied until pinMode() is called
      */
     MCP23009Pin(MCP23009E& mcp, uint8_t pinNumber, uint8_t mode = INPUT);
 

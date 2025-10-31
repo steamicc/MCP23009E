@@ -64,12 +64,17 @@ void loop() {
 
 MCP23009E mcp(Wire, MCP23009_I2C_ADDR);
 
-// Create Pin objects
-MCP23009Pin button(mcp, 7, MCP23009Pin::INPUT_PULLUP);
-MCP23009Pin led(mcp, 0, MCP23009Pin::OUTPUT);
+// Create Pin objects (mode will be configured after I2C initialization)
+MCP23009Pin button(mcp, 7);
+MCP23009Pin led(mcp, 0);
 
 void setup() {
+    Wire.begin();
     mcp.begin();
+
+    // Configure pin modes after mcp.begin()
+    button.pinMode(INPUT_PULLUP);
+    led.pinMode(OUTPUT);
 
     // Use just like Arduino digital pins!
     led.high();
@@ -102,7 +107,11 @@ MCP23009E mcp(Wire, MCP23009_I2C_ADDR);
 MCP23009ActiveLowPin led(mcp, 0);
 
 void setup() {
+    Wire.begin();
     mcp.begin();
+
+    // Configure pin mode after mcp.begin()
+    led.pinMode(OUTPUT);
 }
 
 void loop() {
@@ -192,7 +201,8 @@ Error codes:
 - `void interruptOnFalling(uint8_t gpx, SimpleCallback callback)` - Register falling edge callback
 - `void interruptOnRaising(uint8_t gpx, SimpleCallback callback)` - Register rising edge callback
 - `void disableInterrupt(uint8_t gpx)` - Disable interrupts on GPIO
-- `void handleInterrupt()` - Call from ISR to process interrupts
+- `bool processPendingInterrupts()` - **Call this in loop()** to process pending interrupts (returns true if processed)
+- `void handleInterrupt()` - Low-level interrupt handler (usually not called directly)
 
 #### Register Access
 - `setIODIR()`, `getIODIR()` - I/O Direction Register

@@ -81,6 +81,9 @@ uint32_t pressCount = 0;
 uint32_t releaseCount = 0;
 
 void loop() {
+    // Process pending interrupts (important for reliability)
+    mcp.processPendingInterrupts();
+
     // Handle button press events in main loop (not in ISR)
     if (buttonPressed) {
         buttonPressed = false;

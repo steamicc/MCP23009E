@@ -115,6 +115,9 @@ void printButtonEvent(const char* buttonName, volatile ButtonState& button) {
 }
 
 void loop() {
+    // Process pending interrupts (important for reliability)
+    mcp.processPendingInterrupts();
+
     // Check and handle all button events
     bool anyChange = false;
 

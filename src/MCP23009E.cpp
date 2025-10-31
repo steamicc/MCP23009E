@@ -7,7 +7,7 @@
 
 // ===== Static Members Initialization =====
 MCP23009E* MCP23009E::_isrInstance = nullptr;
-uint32_t MCP23009E::_lastInterruptTime = 0;
+volatile bool MCP23009E::_interruptPending = false;
 
 // ===== MCP23009Config Implementation =====
 
@@ -77,12 +77,13 @@ uint8_t MCP23009Config::getRegisterValue() const {
 
 MCP23009E::MCP23009E(TwoWire& wire, uint8_t address)
     : _wire(wire), _address(address), _resetPin(-1), _interruptPin(-1), _lastError(MCP23009_OK) {
-    // Initialize callback arrays to nullptr
+    // Initialize callback arrays and debounce timers
     for (int i = 0; i < 8; i++) {
         _eventsChange[i] = nullptr;
         _eventsChangeSimple[i] = nullptr;
         _eventsFall[i] = nullptr;
         _eventsRise[i] = nullptr;
+        _lastInterruptTime[i] = 0;
     }
 }
 
@@ -90,10 +91,21 @@ void MCP23009E::begin(int resetPin, int interruptPin) {
     _resetPin = resetPin;
     _interruptPin = interruptPin;
 
-    // Configure reset pin if provided
+    // Configure reset pin and perform hardware reset
+    // IMPORTANT: Wire.begin() must be called BEFORE calling this method
     if (_resetPin >= 0) {
         pinMode(_resetPin, OUTPUT);
+        digitalWrite(_resetPin, HIGH);  // Ensure reset is HIGH (inactive)
+        delay(1);  // Small delay to stabilize
         reset();
+    }
+
+    // Configure IOCON register for proper interrupt operation
+    if (_interruptPin >= 0) {
+        // Set ODR (Open-Drain) for INT pin
+        MCP23009Config config = getIOCON();
+        config.setODR();  // Enable open-drain output for INT pin
+        setIOCON(config);
     }
 
     // Configure interrupt pin if provided
@@ -101,15 +113,12 @@ void MCP23009E::begin(int resetPin, int interruptPin) {
         // Set this instance as the ISR instance
         _isrInstance = this;
 
-        // Configure the pin (no pull-up, MCP23009E INT is open-drain)
-        pinMode(_interruptPin, INPUT);
+        // Configure the pin with pull-up (required for open-drain INT from MCP23009E)
+        pinMode(_interruptPin, INPUT_PULLUP);
 
         // Attach the static ISR
         attachInterrupt(digitalPinToInterrupt(_interruptPin), staticISR, FALLING);
     }
-
-    // Initialize I2C
-    _wire.begin();
 }
 
 void MCP23009E::reset() {
@@ -171,6 +180,10 @@ void MCP23009E::sendEnableInterrupt(uint8_t gpx) {
 
     writeRegister(MCP23009_GPINTEN, gpinten);
     writeRegister(MCP23009_INTCON, intcon);
+
+    // Clear any pending interrupt by reading GPIO
+    // This ensures we start with a clean state
+    readRegister(MCP23009_GPIO);
 }
 
 void MCP23009E::sendDisableInterrupt(uint8_t gpx) {
@@ -223,13 +236,18 @@ void MCP23009E::disableInterrupt(uint8_t gpx) {
 }
 
 void MCP23009E::handleInterrupt() {
+    // Read interrupt flags FIRST to see what triggered
+    uint8_t intf = readRegister(MCP23009_INTF);
+
+    // If no interrupt flags, nothing to do
+    if (intf == 0) {
+        return;
+    }
+
     // Read interrupt configuration
     MCP23009Config iocon = getIOCON();
 
-    // Read interrupt flags
-    uint8_t intf = readRegister(MCP23009_INTF);
-
-    // Read GPIO state (clears interrupt)
+    // Read GPIO state (this clears the interrupt)
     uint8_t state;
     if (iocon.hasIntCC()) {
         state = readRegister(MCP23009_INTCAP);
@@ -237,9 +255,18 @@ void MCP23009E::handleInterrupt() {
         state = readRegister(MCP23009_GPIO);
     }
 
+    // Get current time for debouncing
+    uint32_t currentTime = millis();
+
     // Process each GPIO that generated an interrupt
     for (uint8_t i = 0; i < 8; i++) {
         if (getBit(intf, i)) {
+            // Apply per-GPIO debouncing
+            if (currentTime - _lastInterruptTime[i] < DEBOUNCE_DELAY) {
+                continue;  // Skip this GPIO, too soon since last interrupt
+            }
+            _lastInterruptTime[i] = currentTime;
+
             uint8_t level = getBit(state, i);
 
             // Call appropriate callbacks
@@ -263,14 +290,44 @@ void MCP23009E::handleInterrupt() {
     }
 }
 
-void IRAM_ATTR MCP23009E::staticISR() {
-    uint32_t currentTime = millis();
+bool MCP23009E::processPendingInterrupts() {
+    bool processed = false;
+    uint8_t maxIterations = 10;  // Safety limit to prevent infinite loops
 
-    // Simple debouncing
-    if (_isrInstance != nullptr && (currentTime - _lastInterruptTime > DEBOUNCE_DELAY)) {
-        _isrInstance->handleInterrupt();
-        _lastInterruptTime = currentTime;
+    // Keep processing while there are pending interrupts
+    while (_interruptPending && maxIterations > 0) {
+        maxIterations--;
+
+        // Clear the flag BEFORE processing
+        // This allows new interrupts to set it again during processing
+        _interruptPending = false;
+
+        // Process the interrupt (debouncing is done per-GPIO inside handleInterrupt)
+        handleInterrupt();
+        processed = true;
+
+        // Check if INT pin is still LOW (meaning more interrupts pending)
+        if (_interruptPin >= 0 && digitalRead(_interruptPin) == LOW) {
+            // Read INTF to check if there are actually pending interrupts
+            uint8_t intf = readRegister(MCP23009_INTF);
+            if (intf != 0) {
+                // Yes, there are real pending interrupts
+                _interruptPending = true;
+            } else {
+                // INT is LOW but no interrupts flagged - this shouldn't happen
+                // Break out to avoid infinite loop
+                break;
+            }
+        }
     }
+
+    return processed;
+}
+
+void IRAM_ATTR MCP23009E::staticISR() {
+    // Just set a flag - actual processing happens in main loop
+    // This avoids I2C communication and millis() calls in ISR context
+    _interruptPending = true;
 }
 
 // ===== Register Access Methods =====
@@ -411,7 +468,8 @@ uint8_t MCP23009E::getBit(uint8_t reg, uint8_t bit) {
 
 MCP23009Pin::MCP23009Pin(MCP23009E& mcp, uint8_t pinNumber, uint8_t mode)
     : _mcp(mcp), _pinNumber(pinNumber), _mode(mode) {
-    pinMode(mode);
+    // Note: pinMode() is NOT called here to avoid I2C communication before Wire.begin()
+    // User must call pinMode() explicitly after mcp.begin() or the pin will use the default mode
 }
 
 void MCP23009Pin::pinMode(uint8_t mode) {
@@ -466,10 +524,8 @@ void MCP23009Pin::detachInterrupt() {
 
 MCP23009ActiveLowPin::MCP23009ActiveLowPin(MCP23009E& mcp, uint8_t pinNumber, uint8_t mode)
     : MCP23009Pin(mcp, pinNumber, mode) {
-    // Initialize to HIGH (LED off)
-    if (mode == OUTPUT) {
-        digitalWrite(LOW);  // LOW means LED off in active-low
-    }
+    // Note: digitalWrite() is NOT called here to avoid I2C communication before Wire.begin()
+    // User must call pinMode() and set initial state explicitly after mcp.begin()
 }
 
 void MCP23009ActiveLowPin::digitalWrite(uint8_t value) {

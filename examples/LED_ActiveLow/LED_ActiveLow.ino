@@ -51,6 +51,12 @@ void setup() {
     // Initialize MCP23009E
     mcp.begin(RESET_PIN);
 
+    // Configure all LED pins as outputs after I2C initialization
+    for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i]->pinMode(OUTPUT);
+        leds[i]->low();  // Start with all LEDs off
+    }
+
     Serial.println("✓ LEDs configured (all OFF)\n");
 
     // Test 1: Sequential blink
