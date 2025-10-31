@@ -65,6 +65,11 @@ void setup() {
     Serial.println("\n========================================");
     Serial.println("MCP23009E Interrupt Debug Example");
     Serial.println("========================================\n");
+    // Configure MCP23009E reset pin BEFORE I2C initialization
+    Serial.println("Configuring MCP23009E reset...");
+    pinMode(RST_EXPANDER, OUTPUT);
+    digitalWrite(RST_EXPANDER, HIGH);  // Keep reset inactive
+    Serial.println("✓ Reset pin configured\n");
 
     // Initialize I2C
     Serial.println("Step 1: Initializing I2C...");
