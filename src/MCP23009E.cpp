@@ -5,6 +5,10 @@
 
 #include "MCP23009E.h"
 
+// ===== Static Members Initialization =====
+MCP23009E* MCP23009E::_isrInstance = nullptr;
+uint32_t MCP23009E::_lastInterruptTime = 0;
+
 // ===== MCP23009Config Implementation =====
 
 MCP23009Config::MCP23009Config(uint8_t reg) : _reg(reg & 0b00100111) {}
@@ -94,7 +98,14 @@ void MCP23009E::begin(int resetPin, int interruptPin) {
 
     // Configure interrupt pin if provided
     if (_interruptPin >= 0) {
+        // Set this instance as the ISR instance
+        _isrInstance = this;
+
+        // Configure the pin (no pull-up, MCP23009E INT is open-drain)
         pinMode(_interruptPin, INPUT);
+
+        // Attach the static ISR
+        attachInterrupt(digitalPinToInterrupt(_interruptPin), staticISR, FALLING);
     }
 
     // Initialize I2C
@@ -249,6 +260,16 @@ void MCP23009E::handleInterrupt() {
                 _eventsChangeSimple[i]();
             }
         }
+    }
+}
+
+void IRAM_ATTR MCP23009E::staticISR() {
+    uint32_t currentTime = millis();
+
+    // Simple debouncing
+    if (_isrInstance != nullptr && (currentTime - _lastInterruptTime > DEBOUNCE_DELAY)) {
+        _isrInstance->handleInterrupt();
+        _lastInterruptTime = currentTime;
     }
 }
 

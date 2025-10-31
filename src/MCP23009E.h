@@ -14,6 +14,11 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+// IRAM_ATTR is ESP32-specific, define it as empty for other platforms
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
+
 // ===== Register Addresses =====
 #define MCP23009_IODIR      0x00  // I/O Direction Register
 #define MCP23009_IPOL       0x01  // Input Polarity Register
@@ -171,6 +176,11 @@ public:
      */
     void handleInterrupt();
 
+    /**
+     * @brief Static ISR handler (automatically configured by begin())
+     */
+    static void IRAM_ATTR staticISR();
+
     // ===== Register Access Methods =====
     void setIODIR(uint8_t value);
     uint8_t getIODIR();
@@ -235,6 +245,11 @@ private:
 
     // Error tracking
     MCP23009Error _lastError;
+
+    // Static instance for ISR
+    static MCP23009E* _isrInstance;
+    static uint32_t _lastInterruptTime;
+    static const uint32_t DEBOUNCE_DELAY = 50;  // 50ms debounce
 
     // Private methods
     void writeRegister(uint8_t reg, uint8_t value);

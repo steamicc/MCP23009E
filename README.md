@@ -232,9 +232,15 @@ All methods are identical to `MCP23009Pin`, but logic is automatically inverted.
 
 The library includes several examples:
 
+### Basic Examples
 - **BasicUsage** - Read D-PAD buttons and print states
 - **LED_ActiveLow** - Control LEDs in active-low configuration with effects
 - **ErrorHandling** - Demonstrates I2C error detection and handling
+
+### Interrupt Examples
+- **InterruptBasic** - Simple interrupt handling with one button (FALLING/RISING)
+- **InterruptMultipleButtons** - Handle interrupts from multiple buttons (CHANGE mode)
+- **InterruptWithPin** - Use Pin API with interrupts and LED control
 
 ## Hardware Considerations
 
